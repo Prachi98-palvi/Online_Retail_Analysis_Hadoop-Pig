@@ -1,0 +1,196 @@
+/*
+Context : The objective of the project to illustrate retail analytics using an online retail dataset containing transactions occurring between 01/12/2010 and 09/12/2011 for a UK-based and registered non-store online retail. 
+This dataset is used to perform basic eda operations using Hadoop Pig. 
+The dataset has 8 variables and 541910 entries.
+The Variable Description is as follows :
+	InvoiceNo-integer -Transaction Number
+	StockCode-character -SKU Code (Product Code)
+	Description -character -Product Description
+	Quantity -int-Quantity ordered
+	InvoiceDate-character -Transaction Data
+	UnitPrice-float-Price per unit quantity
+	CustomerID-character -Customer ID
+	Country -character -Customer location
+
+*/
+
+-- Creating directories (Leave safemode if NameNode not working)
+
+[cloudera@quickstart ~]$ hdfs dfs -mkdir /user/cloudera/retail
+[cloudera@quickstart ~]$ hdfs dfs -mkdir /user/cloudera/retail/retailsalesraw
+[cloudera@quickstart ~]$ hdfs dfs -mkdir /user/cloudera/retail/retailsalesclean
+[cloudera@quickstart ~]$ hdfs dfs -mkdir /user/cloudera/retail/georevenue
+
+-- Importing Data into Hdfs
+
+[cloudera@quickstart ~]$ hdfs dfs -put /home/cloudera/Downloads/OnlineRetail.txt /user/cloudera/retail/retailsalesraw/
+[cloudera@quickstart ~]$ hdfs dfs -ls /user/cloudera/retail/retailsalesraw
+
+-- Starting pig 
+
+[cloudera@quickstart ~]$ pig
+
+-- Loading dating into Hdfs 
+
+grunt> OnlineRetailRawData = LOAD '/user/cloudera/retail/retailsalesraw/OnlineRetail.txt' using PigStorage('\t') AS (InvoiceNo: int, StockCode: chararray, Description: chararray, Quantity: int, InvoiceDate: chararray, UnitPrice: float, CustomerID: int, Country: chararray);
+
+-- Cleansing Data 
+
+grunt> RetailSalesRaw = FILTER OnlineRetailRawData BY NOT (InvoiceDate matches 'InvoiceDate');
+grunt> RetailSalesClean = FOREACH RetailSalesRaw GENERATE InvoiceNo, StockCode, Description, Quantity, CONCAT(InvoiceDate,':00') as (InvoiceDate:chararray), UnitPrice, ROUND(UnitPrice * Quantity * 100f)/100f AS (TotalPrice: float), CustomerID, Country;
+grunt> STORE RetailSalesClean INTO '/user/cloudera/retail/retailsalesclean' USING PigStorage ('\t');
+
+-- Group Data By Country 
+
+grunt> GeoGroup = GROUP RetailSalesClean BY Country;
+grunt> GeoRevenue = FOREACH GeoGroup GENERATE group, ROUND(SUM(RetailSalesClean.TotalPrice)) AS TotalRevenueByCountry;
+grunt> GeoRevenueOrdered = ORDER GeoRevenue BY TotalRevenueByCountry DESC;
+grunt> Top10GeoRevenue = LIMIT GeoRevenueOrdered 10;
+grunt> STORE Top10GeoRevenue INTO '/user/cloudera/retail/georevenue' USING PigStorage ('\t');
+grunt> dump Top10GeoRevenue;
+
+/* 
+Output Top 10 Countries by revenue (Country,TotalRevenueByCountry)
+(United Kingdom,8187806)
+(Netherlands,284662)
+(EIRE,263277)
+(Germany,221698)
+(France,197404)
+(Australia,137077)
+(Switzerland,56385)
+(Spain,54775)
+(Belgium,40911)
+(Sweden,36596)
+*/
+
+grunt> GeoRevenueOrderedA = ORDER GeoRevenue BY TotalRevenueByCountry ASC;
+grunt> Last10GeoRevenue = LIMIT GeoRevenueOrderedA 10;
+grunt> dump Last10GeoRevenue;
+
+/* 
+Last 10 countries by revenue (Country,TotalRevenueByCountry)
+(Saudi Arabia,149)
+(Bahrain,759)
+(Czech Republic,836)
+(RSA,1021)
+(Brazil,1158)
+(European Community,1320)
+(Lithuania,1671)
+(Lebanon,1709)
+(United Arab Emirates,1930)
+(Malta,2756)
+*/
+
+-- Top 10 countries by No of Customers 
+
+grunt> GeoCustomers = FOREACH GeoGroup GENERATE group, COUNT(RetailSalesClean.InvoiceNo) AS TotalCustomerByCountry;
+grunt> GeoCustomersOrdered = ORDER GeoCustomers BY TotalCustomerByCountry DESC;
+grunt> Top10GeoCustomer = LIMIT GeoCustomersOrdered 10;
+grunt> dump Top10GeoCustomer;
+
+/*
+(United Kingdom,486284)
+(Germany,9042)
+(France,8408)
+(EIRE,7894)
+(Spain,2485)
+(Netherlands,2363)
+(Belgium,2031)
+(Switzerland,1967)
+(Portugal,1501)
+(Australia,1185)
+ */
+
+-- Last 10 countries by No of Customers 
+
+grunt> GeoCustomersOrderedA = ORDER GeoCustomers BY TotalCustomerByCountry ASC;
+grunt> Last10GeoCustomer = LIMIT GeoCustomersOrderedA 10;
+grunt> dump Last10GeoCustomer;
+
+/*
+(Saudi Arabia,9)
+(Bahrain,18)
+(Czech Republic,25)
+(Brazil,32)
+(Lithuania,35)
+(Lebanon,45)
+(RSA,58)
+(European Community,60)
+(United Arab Emirates,68)
+(Malta,112)
+*/
+
+-- Top 5 customers by orders 
+
+grunt> d1 = GROUP RetailSalesClean BY CustomerID;
+grunt> d2 = FOREACH d1 GENERATE group AS Customer, SUM(RetailSalesClean.Quantity) AS no_of_orders;
+grunt> d3 = ORDER d2 BY no_of_orders DESC;
+grunt> d4 = LIMIT d3 5;
+grunt> dump d4;
+
+/* 
+Output (CustomerID, no_of_orders)
+(,269562)
+(14646,196719)
+(12415,77242)
+(14911,77180)
+(17450,69029)
+*/
+
+-- Top 5 customers by Revenue 
+
+grunt> d4 = FOREACH d1 GENERATE CustomerID, SUM(RetailSalesClean.TotalPrice) AS amount;
+grunt> d5 = ORDER d4 BY amount DESC;
+grunt> d6 = LIMIT d5 5;
+grunt> dump d5;
+
+/* 
+Output (CustomerID, Amount)
+(,1447682.118884053)
+(14646,279489.02011987567)
+(18102,256438.49016785622)
+(17450,187482.17038536072)
+(14911,132572.6199362278)
+*/
+
+-- Top Ten Highest Unit Prices 
+grunt> x0 = FOREACH RetailSalesClean GENERATE InvoiceNo,CustomerID,UnitPrice,Country;
+grunt> x1 = ORDER x0 BY UnitPrice DESC;
+grunt> x2 = LIMIT x1 10;
+grunt> dump x2;
+
+/*
+(537632,,13541.33,United Kingdom)
+(A563185,,11062.06,United Kingdom)
+(551697,16029,8142.75,United Kingdom)
+(562955,,4505.17,United Kingdom)
+(560373,,4287.63,United Kingdom)
+(573077,12536,4161.06,France)
+(573080,12536,4161.06,France)
+(571751,12744,3949.32,Singapore)
+(569382,15502,3155.95,United Kingdom)
+(567353,,2653.95,Hong Kong)
+*/
+
+-- Top Ten Most Ordered Products 
+
+grunt> y0 = GROUP RetailSalesClean BY StockCode;
+grunt> y1 = FOREACH y0 GENERATE StockCode, SUM(RetailSalesClean.Quantity) as TotalOrders;
+grunt> y2 = ORDER y1 BY TotalOrders DESC;
+grunt> y3 = LIMIT y2 10;
+grunt> dump y3;
+
+/* 
+Output (StockCode, TotalOrders) 
+(22197,56450)  -- SMALL POPCORN HOLDER
+(84077,53847)  -- WORLD WAR 2 GLIDERS ASSTD DESIGNS
+(85099B,47363) -- JUMBO BAG RED RETROSPOT
+(85123a,39122) -- WHITE HANGING HEART T-LIGHT HOLDER
+(84879,36221)  -- ASSORTED COLOUR BIRD ORNAMENT
+(21212,36039)  -- PACK OF 72 RETROSPOT CAKE CASES
+(23084,30646)  -- RABBIT NIGHT LIGHT
+(22492,26437)  -- MINI PAINT SET VINTAGE 
+(22616,26315)  -- PACK OF 12 LONDON TISSUES 
+(21977,24753)  -- PACK OF 60 PINK PAISLEY CAKE CASES
+*/
+
