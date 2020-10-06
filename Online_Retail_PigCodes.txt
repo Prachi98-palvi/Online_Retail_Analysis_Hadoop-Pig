@@ -30,7 +30,7 @@ The Variable Description is as follows :
 
 [cloudera@quickstart ~]$ pig
 
--- Loading dating into Hdfs 
+-- Loading data into Hdfs 
 
 grunt> OnlineRetailRawData = LOAD '/user/cloudera/retail/retailsalesraw/OnlineRetail.txt' using PigStorage('\t') AS (InvoiceNo: int, StockCode: chararray, Description: chararray, Quantity: int, InvoiceDate: chararray, UnitPrice: float, CustomerID: int, Country: chararray);
 
